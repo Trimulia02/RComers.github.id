@@ -470,7 +470,7 @@ function updateCart() {
         </div>
         <div class="cart-item-quantity">
           <button class="qty-btn" onclick="updateQuantity(${item.id}, ${item.quantity - 1})">−</button>
-          <span style="width: 30px; text-align: center;">${item.quantity}</span>
+          <span class="cart-qty-value">${item.quantity}</span>
           <button class="qty-btn" onclick="updateQuantity(${item.id}, ${item.quantity + 1})">+</button>
         </div>
         <button class="remove-btn" onclick="removeFromCart(${item.id})">Remove</button>
@@ -1348,5 +1348,4 @@ document.addEventListener("DOMContentLoaded", initializeApp);
 // These are needed because inline onclick attributes can't access ES6 module exports
 window.updateQuantity = updateQuantity;
 window.removeFromCart = removeFromCart;
-
 
