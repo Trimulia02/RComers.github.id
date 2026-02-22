@@ -55,11 +55,8 @@
           <p>Experience the Ultimate in Remote Control Vehicles</p>
           <button
             class="btn-primary"
-            onclick="
-              document
-                .querySelector('#models')
-                .scrollIntoView({ behavior: 'smooth' })
-            "
+            type="button"
+            data-scroll-target="models"
           >
             EXPLORE NOW
           </button>
@@ -113,7 +110,7 @@
           <div class="product-badge">BEST SELLER</div>
           <div class="product-model-viewer">
             <model-viewer
-              src="assets/car-model/rc_highwayman_-_low_poly_model/scene.gltf"
+              data-model-src="assets/car-model/rc_highwayman_-_low_poly_model/scene.gltf"
               alt="RC Highwayman"
               auto-rotate
               camera-controls
@@ -151,7 +148,7 @@
           <div class="product-badge hot">HOT ITEM</div>
           <div class="product-model-viewer">
             <model-viewer
-              src="assets/car-model/rc_annihilator_-_low_poly_model/scene.gltf"
+              data-model-src="assets/car-model/rc_annihilator_-_low_poly_model/scene.gltf"
               alt="RC Annihilator"
               auto-rotate
               camera-controls
@@ -188,7 +185,7 @@
         >
           <div class="product-model-viewer">
             <model-viewer
-              src="assets/car-model/rc_shvan_-_low_poly_model/scene.gltf"
+              data-model-src="assets/car-model/rc_shvan_-_low_poly_model/scene.gltf"
               alt="RC Shvan"
               auto-rotate
               camera-controls
@@ -228,7 +225,7 @@
               <div class="bttf-text">BACK TO THE FUTURE</div>
             </div>
             <model-viewer
-              src="assets/car-model/fortnite_back_to_the_future_time_machine/scene.gltf"
+              data-model-src="assets/car-model/fortnite_back_to_the_future_time_machine/scene.gltf"
               alt="BTTF Time Machine"
               auto-rotate
               camera-controls
@@ -268,7 +265,7 @@
         </div>
         <div class="gallery-viewer">
           <model-viewer
-            src="assets/car-model/rc_annihilator_-_low_poly_model/scene.gltf"
+            data-model-src="assets/car-model/rc_annihilator_-_low_poly_model/scene.gltf"
             alt="RC Annihilator"
             auto-rotate
             camera-controls

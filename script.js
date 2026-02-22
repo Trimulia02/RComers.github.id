@@ -43,23 +43,6 @@ const CONFIG = {
   },
 };
 
-// Z-index management
-const Z_INDEX = {
-  DROPDOWN: 100,
-  MODAL: 1000,
-  NOTIFICATION: 2000,
-};
-
-// Brand colors
-const COLORS = {
-  PRIMARY_RED: "#c41e3a",
-  TOSCA: "#4dbfb8",
-  CREAM: "#fff8e7",
-  WHITE: "#ffffff",
-  DARK: "#333333",
-  LIGHT_GRAY: "#f5f5f5",
-};
-
 
 /* ===== src/js/utils/formatter.js ===== */
 
@@ -81,19 +64,6 @@ function formatIDR(amount) {
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
   }).format(amount);
-}
-
-/**
- * Format date to readable string
- * @param {Date} date - Date to format
- * @returns {string} Formatted date string
- */
-function formatDate(date) {
-  return new Intl.DateTimeFormat(CONFIG.LOCALE, {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  }).format(new Date(date));
 }
 
 /**
@@ -138,7 +108,7 @@ function loadCart() {
     // Migrate legacy cart items (add model paths if missing)
     return cart.map((item) => {
       if (!item.model) {
-        item.model = getMigrationModelPath(item.name);
+        item.model = getModelPathByProduct(item.name);
       }
       return item;
     });
@@ -148,61 +118,6 @@ function loadCart() {
   }
 }
 
-/**
- * Get model path for legacy cart items migration
- * @param {string} productName - Product name
- * @returns {string} Model path
- */
-function getMigrationModelPath(productName) {
-  const modelMap = {
-    "RC HIGHWAYMAN": CONFIG.MODELS.RC_HIGHWAYMAN,
-    "RC ANNIHILATOR": CONFIG.MODELS.RC_ANNIHILATOR,
-    "RC SHVAN": CONFIG.MODELS.RC_SHVAN,
-    "BTTF TIME MACHINE": CONFIG.MODELS.FORTNITE_BTTF,
-  };
-  return modelMap[productName] || "";
-}
-
-/**
- * Clear cart from localStorage
- */
-function clearCart() {
-  try {
-    localStorage.removeItem(CONFIG.CART_STORAGE_KEY);
-  } catch (error) {
-    console.error("Failed to clear cart:", error);
-  }
-}
-
-/**
- * Save any data to localStorage
- * @param {string} key - Storage key
- * @param {*} value - Value to store
- */
-function saveData(key, value) {
-  try {
-    localStorage.setItem(key, JSON.stringify(value));
-  } catch (error) {
-    console.error(`Failed to save ${key}:`, error);
-  }
-}
-
-/**
- * Load any data from localStorage
- * @param {string} key - Storage key
- * @returns {*} Stored value or null
- */
-function loadData(key) {
-  try {
-    const data = localStorage.getItem(key);
-    return data ? JSON.parse(data) : null;
-  } catch (error) {
-    console.error(`Failed to load ${key}:`, error);
-    return null;
-  }
-}
-
-
 /* ===== src/js/modules/modals.js ===== */
 
 /* ========================================
@@ -210,13 +125,106 @@ function loadData(key) {
    Handle modal open/close operations
    ======================================== */
 
+const FOCUSABLE_SELECTOR =
+  'a[href], area[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+let lastFocusedElement = null;
+
 /**
  * Initialize modal event listeners
  */
 function initModals() {
+  setupModalAccessibility();
   setupCloseButtons();
   setupBackdropClose();
   setupCheckoutButton();
+  setupEscapeClose();
+}
+
+/**
+ * Initialize modal ARIA attributes and keyboard trapping
+ */
+function setupModalAccessibility() {
+  document.querySelectorAll(".modal").forEach((modal) => {
+    if (!modal.id) return;
+
+    modal.setAttribute("role", "dialog");
+    modal.setAttribute("aria-modal", "true");
+    modal.setAttribute("aria-hidden", "true");
+    modal.setAttribute("tabindex", "-1");
+
+    const modalTitle = modal.querySelector(".modal-header h2, h2");
+    if (modalTitle) {
+      if (!modalTitle.id) {
+        modalTitle.id = `${modal.id}Title`;
+      }
+      modal.setAttribute("aria-labelledby", modalTitle.id);
+    }
+
+    modal.querySelectorAll(".close-modal").forEach((closeBtn) => {
+      if (!closeBtn.hasAttribute("aria-label")) {
+        closeBtn.setAttribute("aria-label", "Close dialog");
+      }
+    });
+
+    modal.addEventListener("keydown", trapModalFocus);
+  });
+}
+
+/**
+ * Trap keyboard tab focus inside active modal
+ * @param {KeyboardEvent} event - Keydown event
+ */
+function trapModalFocus(event) {
+  if (event.key !== "Tab") return;
+
+  const modal = event.currentTarget;
+  if (!modal.classList.contains("active")) return;
+
+  const focusableElements = getFocusableElements(modal);
+  if (focusableElements.length === 0) {
+    event.preventDefault();
+    modal.focus();
+    return;
+  }
+
+  const firstElement = focusableElements[0];
+  const lastElement = focusableElements[focusableElements.length - 1];
+
+  if (event.shiftKey && document.activeElement === firstElement) {
+    event.preventDefault();
+    lastElement.focus();
+  } else if (!event.shiftKey && document.activeElement === lastElement) {
+    event.preventDefault();
+    firstElement.focus();
+  }
+}
+
+/**
+ * Get visible focusable elements inside container
+ * @param {Element} container - Parent container
+ * @returns {HTMLElement[]} Focusable children
+ */
+function getFocusableElements(container) {
+  return Array.from(container.querySelectorAll(FOCUSABLE_SELECTOR)).filter(
+    (element) =>
+      element instanceof HTMLElement &&
+      element.getAttribute("aria-hidden") !== "true" &&
+      element.offsetParent !== null,
+  );
+}
+
+/**
+ * Focus first interactive element in modal
+ * @param {Element} modal - Modal element
+ */
+function focusFirstModalElement(modal) {
+  const focusableElements = getFocusableElements(modal);
+  const firstFocusable = focusableElements[0];
+  if (firstFocusable) {
+    firstFocusable.focus();
+  } else {
+    modal.focus();
+  }
 }
 
 /**
@@ -224,19 +232,17 @@ function initModals() {
  */
 function setupCloseButtons() {
   document.querySelectorAll(".close-modal").forEach((btn) => {
-    btn.addEventListener("click", (e) => {
+    btn.addEventListener("click", () => {
       const modalId = btn.dataset.modal;
       closeModal(modalId);
     });
   });
 
-  document.querySelectorAll("[data-modal]").forEach((btn) => {
-    if (btn.classList.contains("btn-secondary")) {
-      btn.addEventListener("click", () => {
-        const modalId = btn.dataset.modal;
-        closeModal(modalId);
-      });
-    }
+  document.querySelectorAll(".btn-secondary[data-modal]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const modalId = btn.dataset.modal;
+      closeModal(modalId);
+    });
   });
 }
 
@@ -259,12 +265,32 @@ function setupBackdropClose() {
 function setupCheckoutButton() {
   const checkoutBtn = document.getElementById("checkoutBtn");
   if (checkoutBtn) {
-    checkoutBtn.addEventListener("click", () => {
-      // Cart check is in main.js with cart module access
+    checkoutBtn.addEventListener("click", (e) => {
+      if (cart.length === 0) {
+        e.preventDefault();
+        alert("Your cart is empty!");
+        return;
+      }
+
       closeModal("cartModal");
       openModal("checkoutModal");
     });
   }
+}
+
+/**
+ * Setup Escape key handler for modals
+ */
+function setupEscapeClose() {
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+
+    const activeModals = document.querySelectorAll(".modal.active");
+    const lastActiveModal = activeModals[activeModals.length - 1];
+    if (lastActiveModal) {
+      closeModal(lastActiveModal.id);
+    }
+  });
 }
 
 /**
@@ -274,8 +300,20 @@ function setupCheckoutButton() {
 function openModal(modalId) {
   const modal = document.getElementById(modalId);
   if (modal) {
+    if (!modal.classList.contains("active")) {
+      const activeElement = document.activeElement;
+      if (activeElement instanceof HTMLElement) {
+        lastFocusedElement = activeElement;
+      }
+    }
+
     modal.classList.add("active");
+    modal.setAttribute("aria-hidden", "false");
     document.body.style.overflow = "hidden";
+
+    requestAnimationFrame(() => {
+      focusFirstModalElement(modal);
+    });
   }
 }
 
@@ -287,18 +325,17 @@ function closeModal(modalId) {
   const modal = document.getElementById(modalId);
   if (modal) {
     modal.classList.remove("active");
-    document.body.style.overflow = "auto";
-  }
-}
+    modal.setAttribute("aria-hidden", "true");
 
-/**
- * Check if modal is open
- * @param {string} modalId - Modal element ID
- * @returns {boolean} True if modal is open
- */
-function isModalOpen(modalId) {
-  const modal = document.getElementById(modalId);
-  return modal ? modal.classList.contains("active") : false;
+    if (!document.querySelector(".modal.active")) {
+      document.body.style.overflow = "auto";
+
+      if (lastFocusedElement && document.contains(lastFocusedElement)) {
+        lastFocusedElement.focus();
+      }
+      lastFocusedElement = null;
+    }
+  }
 }
 
 
@@ -311,6 +348,13 @@ function isModalOpen(modalId) {
 
 
 let cart = [];
+const PRODUCT_MODEL_MAP = {
+  "RC HIGHWAYMAN": CONFIG.MODELS.RC_HIGHWAYMAN,
+  "RC ANNIHILATOR": CONFIG.MODELS.RC_ANNIHILATOR,
+  "RC SHVAN": CONFIG.MODELS.RC_SHVAN,
+  "BTTF TIME MACHINE": CONFIG.MODELS.FORTNITE_BTTF,
+  "RC TIME MACHINE": CONFIG.MODELS.FORTNITE_BTTF,
+};
 
 /**
  * Initialize cart from localStorage
@@ -343,6 +387,11 @@ function setupCartEventListeners() {
   if (cartIcon) {
     cartIcon.addEventListener("click", () => openModal("cartModal"));
   }
+
+  const cartItemsContainer = document.getElementById("cartItems");
+  if (cartItemsContainer) {
+    cartItemsContainer.addEventListener("click", handleCartActionClick);
+  }
 }
 
 /**
@@ -355,6 +404,34 @@ function handleAddToCart(e) {
 
   addToCart(product, price);
   showCartNotification(product);
+}
+
+/**
+ * Handle cart item actions using event delegation
+ * @param {MouseEvent} event - Click event
+ */
+function handleCartActionClick(event) {
+  const clickTarget = event.target instanceof Element ? event.target : null;
+  if (!clickTarget) return;
+
+  const actionButton = clickTarget.closest("[data-cart-action][data-item-id]");
+  if (!actionButton) return;
+
+  const itemId = Number.parseInt(actionButton.dataset.itemId, 10);
+  if (!itemId) return;
+
+  const action = actionButton.dataset.cartAction;
+  const item = cart.find((entry) => entry.id === itemId);
+
+  if (!item && action !== "remove") return;
+
+  if (action === "increase") {
+    updateQuantity(itemId, item.quantity + 1);
+  } else if (action === "decrease") {
+    updateQuantity(itemId, Math.max(1, item.quantity - 1));
+  } else if (action === "remove") {
+    removeFromCart(itemId);
+  }
 }
 
 /**
@@ -397,13 +474,17 @@ function addToCart(product, price) {
  * @returns {string} Model path
  */
 function getModelPathByProduct(productName) {
-  const modelMap = {
-    "RC HIGHWAYMAN": CONFIG.MODELS.RC_HIGHWAYMAN,
-    "RC ANNIHILATOR": CONFIG.MODELS.RC_ANNIHILATOR,
-    "RC SHVAN": CONFIG.MODELS.RC_SHVAN,
-    "BTF TIME MACHINE": CONFIG.MODELS.FORTNITE_BTTF,
-  };
-  return modelMap[productName] || "";
+  return PRODUCT_MODEL_MAP[productName] || "";
+}
+
+/**
+ * Calculate cart totals
+ * @returns {{subtotal: number, tax: number, total: number}}
+ */
+function calculateCartTotals() {
+  const subtotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
+  const tax = subtotal * CONFIG.TAX_RATE;
+  return { subtotal, tax, total: subtotal + tax };
 }
 
 /**
@@ -424,11 +505,11 @@ function removeFromCart(itemId) {
 function updateQuantity(itemId, quantity) {
   const item = cart.find((item) => item.id === itemId);
   if (item) {
-    const newQuantity = Math.max(1, parseInt(quantity) || 1);
-    if (newQuantity < 1) {
-      removeFromCart(itemId);
-      return;
-    }
+    const parsedQuantity = Number.parseInt(quantity, 10);
+    const newQuantity = Number.isNaN(parsedQuantity)
+      ? item.quantity
+      : Math.max(1, parsedQuantity);
+
     item.quantity = newQuantity;
     updateCart();
     saveCart(cart);
@@ -440,6 +521,7 @@ function updateQuantity(itemId, quantity) {
  */
 function updateCart() {
   const cartItemsContainer = document.getElementById("cartItems");
+  if (!cartItemsContainer) return;
 
   // Update cart count
   const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
@@ -469,11 +551,29 @@ function updateCart() {
           <div class="cart-item-price">${formatIDR(item.price)}</div>
         </div>
         <div class="cart-item-quantity">
-          <button class="qty-btn" onclick="updateQuantity(${item.id}, ${item.quantity - 1})">−</button>
+          <button
+            class="qty-btn"
+            type="button"
+            data-cart-action="decrease"
+            data-item-id="${item.id}"
+            aria-label="Decrease quantity for ${item.name}"
+          >−</button>
           <span class="cart-qty-value">${item.quantity}</span>
-          <button class="qty-btn" onclick="updateQuantity(${item.id}, ${item.quantity + 1})">+</button>
+          <button
+            class="qty-btn"
+            type="button"
+            data-cart-action="increase"
+            data-item-id="${item.id}"
+            aria-label="Increase quantity for ${item.name}"
+          >+</button>
         </div>
-        <button class="remove-btn" onclick="removeFromCart(${item.id})">Remove</button>
+        <button
+          class="remove-btn"
+          type="button"
+          data-cart-action="remove"
+          data-item-id="${item.id}"
+          aria-label="Remove ${item.name} from cart"
+        >Remove</button>
       </div>
     `;
       })
@@ -513,12 +613,7 @@ function initializeCartModelViewers() {
  * Update cart summary
  */
 function updateSummary() {
-  const subtotal = cart.reduce(
-    (sum, item) => sum + item.price * item.quantity,
-    0,
-  );
-  const tax = subtotal * CONFIG.TAX_RATE;
-  const total = subtotal + tax;
+  const { subtotal, tax, total } = calculateCartTotals();
 
   const subtotalEl = document.getElementById("subtotal");
   const taxEl = document.getElementById("tax");
@@ -534,6 +629,7 @@ function updateSummary() {
  */
 function updateCheckoutSummary() {
   const checkoutItemsContainer = document.getElementById("checkoutItems");
+  if (!checkoutItemsContainer) return;
 
   if (cart.length === 0) {
     checkoutItemsContainer.innerHTML =
@@ -551,12 +647,7 @@ function updateCheckoutSummary() {
       .join("");
   }
 
-  const subtotal = cart.reduce(
-    (sum, item) => sum + item.price * item.quantity,
-    0,
-  );
-  const tax = subtotal * CONFIG.TAX_RATE;
-  const total = subtotal + tax;
+  const { total } = calculateCartTotals();
 
   const totalEl = document.getElementById("checkoutTotal");
   if (totalEl) totalEl.textContent = formatIDR(total);
@@ -595,14 +686,6 @@ function showCartNotification(product) {
       }
     }, 300);
   }, 3000);
-}
-
-/**
- * Get current cart
- * @returns {Array} Cart items
- */
-function getCart() {
-  return cart;
 }
 
 /**
@@ -650,19 +733,14 @@ function initCheckout() {
  */
 function processPayment() {
   const payBtn = document.getElementById("payBtn");
+  if (!payBtn) return;
   const originalText = payBtn.textContent;
 
   payBtn.disabled = true;
   payBtn.textContent = "PROCESSING...";
 
   setTimeout(() => {
-    // Calculate total
-    const cart = getCart();
-    const subtotal = cart.reduce(
-      (sum, item) => sum + item.price * item.quantity,
-      0,
-    );
-    const total = subtotal + subtotal * CONFIG.TAX_RATE;
+    const { total } = calculateCartTotals();
 
     showPaymentSuccess(total);
 
@@ -702,16 +780,6 @@ function showPaymentSuccess(totalAmount) {
     };
   }
 }
-
-/**
- * Validate form
- * @returns {boolean} True if form is valid
- */
-function validateCheckoutForm() {
-  const form = document.getElementById("checkoutForm");
-  return form ? form.checkValidity() : false;
-}
-
 
 /* ===== src/js/modules/productPreview.js ===== */
 
@@ -808,7 +876,7 @@ function showModelPreview(productData) {
     if (productData.specs) {
       specs = JSON.parse(productData.specs);
     }
-  } catch (e) {
+  } catch {
     console.log("Could not parse specs");
   }
 
@@ -817,7 +885,10 @@ function showModelPreview(productData) {
   if (previewName) previewName.textContent = productData.name;
   if (previewDescription)
     previewDescription.textContent = productData.description;
-  if (previewViewer) previewViewer.src = productData.model;
+  if (previewViewer) {
+    setupLoadingIndicator(previewViewer);
+    previewViewer.src = productData.model;
+  }
 
   // Update specs
   updatePreviewSpecs(specs);
@@ -917,26 +988,6 @@ function setupElementAnimations() {
   }
 }
 
-/**
- * Add fade-in animation to element
- * @param {Element} element - DOM element
- * @param {number} delay - Animation delay in ms
- */
-function animateElement(element, delay = 0) {
-  setTimeout(() => {
-    element.classList.add("fade-in-up");
-  }, delay);
-}
-
-/**
- * Remove animation class
- * @param {Element} element - DOM element
- */
-function removeAnimation(element) {
-  element.classList.remove("fade-in-up");
-}
-
-
 /* ===== src/js/modules/modelViewer.js ===== */
 
 /* ========================================
@@ -949,11 +1000,63 @@ function removeAnimation(element) {
  */
 function initModelViewers() {
   const modelViewers = document.querySelectorAll("model-viewer");
+  const lazyObserver = createLazyModelViewerObserver();
 
   modelViewers.forEach((viewer) => {
-    setupLoadingIndicator(viewer);
     setupModelViewerEvents(viewer);
+
+    const hasImmediateSrc = Boolean(viewer.getAttribute("src"));
+    const hasDeferredSrc = Boolean(viewer.dataset.modelSrc);
+
+    if (hasDeferredSrc) {
+      if (lazyObserver) {
+        lazyObserver.observe(viewer);
+      } else {
+        loadDeferredModel(viewer);
+      }
+      return;
+    }
+
+    if (hasImmediateSrc) {
+      setupLoadingIndicator(viewer);
+    }
   });
+}
+
+/**
+ * Create observer for lazy model source assignment
+ * @returns {IntersectionObserver|null} Observer instance
+ */
+function createLazyModelViewerObserver() {
+  if (!("IntersectionObserver" in window)) return null;
+
+  return new IntersectionObserver(
+    (entries, observer) => {
+      entries.forEach((entry) => {
+        if (!entry.isIntersecting) return;
+
+        loadDeferredModel(entry.target);
+        observer.unobserve(entry.target);
+      });
+    },
+    {
+      rootMargin: "280px 0px",
+      threshold: 0.01,
+    },
+  );
+}
+
+/**
+ * Assign deferred src to model-viewer
+ * @param {Element} viewer - model-viewer element
+ */
+function loadDeferredModel(viewer) {
+  const deferredSrc = viewer.dataset.modelSrc;
+  if (!deferredSrc || viewer.dataset.modelLoaded === "true") return;
+
+  viewer.dataset.modelLoaded = "true";
+  setupLoadingIndicator(viewer);
+  viewer.setAttribute("src", deferredSrc);
 }
 
 /**
@@ -961,6 +1064,8 @@ function initModelViewers() {
  * @param {Element} viewer - model-viewer element
  */
 function setupLoadingIndicator(viewer) {
+  if (viewer.loadingElement && viewer.loadingElement.parentNode) return;
+
   const loadingWrapper = document.createElement("div");
   loadingWrapper.style.cssText = `
     position: absolute;
@@ -995,22 +1100,12 @@ function setupLoadingIndicator(viewer) {
 
   viewer.loadingElement = loadingWrapper;
 
-  // Add animation if not exists
-  if (!document.querySelector("style[data-spin]")) {
-    const style = document.createElement("style");
-    style.setAttribute("data-spin", "true");
-    style.textContent = `
-      @keyframes spin {
-        to { transform: rotate(360deg); }
-      }
-    `;
-    document.head.appendChild(style);
+  if (viewer.dataset.loadingListenerBound !== "true") {
+    viewer.dataset.loadingListenerBound = "true";
+    viewer.addEventListener("load", () => {
+      removeLoadingIndicator(viewer);
+    });
   }
-
-  // Remove loading when model loads
-  viewer.addEventListener("load", () => {
-    removeLoadingIndicator(viewer);
-  });
 }
 
 /**
@@ -1029,6 +1124,7 @@ function setupModelViewerEvents(viewer) {
 
   // Handle model load errors
   viewer.addEventListener("error", () => {
+    removeLoadingIndicator(viewer);
     console.error("Failed to load model:", viewer.src);
   });
 }
@@ -1045,32 +1141,10 @@ function removeLoadingIndicator(viewer) {
       if (viewer.loadingElement && viewer.loadingElement.parentNode) {
         viewer.loadingElement.remove();
       }
+      viewer.loadingElement = null;
     }, 300);
   }
 }
-
-/**
- * Change model viewer source
- * @param {string} selector - CSS selector for viewer
- * @param {string} modelSrc - Model source URL
- */
-function changeModelSource(selector, modelSrc) {
-  const viewer = document.querySelector(selector);
-  if (viewer) {
-    viewer.src = modelSrc;
-  }
-}
-
-/**
- * Get current model source
- * @param {string} selector - CSS selector for viewer
- * @returns {string} Current model source
- */
-function getModelSource(selector) {
-  const viewer = document.querySelector(selector);
-  return viewer ? viewer.src : "";
-}
-
 
 /* ===== src/js/modules/navigation.js ===== */
 
@@ -1085,6 +1159,35 @@ function getModelSource(selector) {
 function initNavigation() {
   setupNavLinks();
   setupScrollListener();
+  updateActiveNav();
+}
+
+/**
+ * Get sticky navbar offset to avoid clipped sections
+ * @returns {number} Offset in pixels
+ */
+function getStickyNavOffset() {
+  const navbar = document.querySelector(".navbar");
+  if (!navbar) return 0;
+
+  const navbarStyles = window.getComputedStyle(navbar);
+  const navbarMarginBottom = parseFloat(navbarStyles.marginBottom) || 0;
+
+  return Math.ceil(navbar.getBoundingClientRect().height + navbarMarginBottom + 8);
+}
+
+/**
+ * Smooth scroll to target with sticky navbar compensation
+ * @param {Element} target - Target element
+ */
+function scrollWithStickyOffset(target) {
+  const targetTop = window.scrollY + target.getBoundingClientRect().top;
+  const scrollTarget = Math.max(0, targetTop - getStickyNavOffset());
+
+  window.scrollTo({
+    top: scrollTarget,
+    behavior: "smooth",
+  });
 }
 
 /**
@@ -1093,12 +1196,12 @@ function initNavigation() {
 function setupNavLinks() {
   document.querySelectorAll(".nav-menu a").forEach((link) => {
     link.addEventListener("click", (e) => {
-      const href = link.getAttribute("href");
+      const href = link.getAttribute("href") || "";
       if (href.startsWith("#")) {
         e.preventDefault();
         const target = document.querySelector(href);
         if (target) {
-          target.scrollIntoView({ behavior: "smooth" });
+          scrollWithStickyOffset(target);
         }
       }
     });
@@ -1109,30 +1212,28 @@ function setupNavLinks() {
  * Setup scroll listener for active nav update
  */
 function setupScrollListener() {
-  window.addEventListener("scroll", updateActiveNav);
+  window.addEventListener("scroll", updateActiveNav, { passive: true });
+  window.addEventListener("resize", updateActiveNav);
 }
 
 /**
  * Update active navigation link on scroll
  */
 function updateActiveNav() {
-  const sections = document.querySelectorAll("section");
+  const sections = document.querySelectorAll("section[id]");
   const navLinks = document.querySelectorAll(".nav-menu a");
+  const scrollMarker = window.scrollY + getStickyNavOffset() + 24;
 
   let current = "";
 
   sections.forEach((section) => {
-    const sectionTop = section.offsetTop - 100;
-    if (window.scrollY >= sectionTop) {
-      current = section.getAttribute("id");
+    if (scrollMarker >= section.offsetTop) {
+      current = section.getAttribute("id") || "";
     }
   });
 
   navLinks.forEach((link) => {
-    link.style.borderBottom = "none";
-    if (link.getAttribute("href") === `#${current}`) {
-      link.style.borderBottom = "2px solid white";
-    }
+    link.classList.toggle("is-active", link.getAttribute("href") === `#${current}`);
   });
 }
 
@@ -1143,28 +1244,9 @@ function updateActiveNav() {
 function scrollToSection(sectionId) {
   const section = document.querySelector(`#${sectionId}`);
   if (section) {
-    section.scrollIntoView({ behavior: "smooth" });
+    scrollWithStickyOffset(section);
   }
 }
-
-/**
- * Get current section
- * @returns {string} Current section ID
- */
-function getCurrentSection() {
-  const sections = document.querySelectorAll("section");
-  let current = "";
-
-  sections.forEach((section) => {
-    const sectionTop = section.offsetTop - 100;
-    if (window.scrollY >= sectionTop) {
-      current = section.getAttribute("id");
-    }
-  });
-
-  return current;
-}
-
 
 /* ===== src/js/modules/buttons.js ===== */
 
@@ -1179,7 +1261,6 @@ function getCurrentSection() {
  */
 function initButtons() {
   handleExploreButton();
-  handleProductButtons();
   handleNotifyButton();
 }
 
@@ -1187,71 +1268,26 @@ function initButtons() {
  * Handle Explore Now button
  */
 function handleExploreButton() {
-  const exploreBtns = document.querySelectorAll(".btn-primary");
+  const exploreBtns = document.querySelectorAll("[data-scroll-target]");
   exploreBtns.forEach((btn) => {
-    if (btn.textContent.trim() === "EXPLORE NOW") {
-      btn.addEventListener("click", () => {
-        scrollToSection("models");
-      });
-    }
-  });
-}
-
-/**
- * Handle product view buttons
- */
-function handleProductButtons() {
-  const viewButtons = document.querySelectorAll(
-    ".btn-secondary:not([data-modal])",
-  );
-
-  viewButtons.forEach((btn) => {
-    if (!btn.textContent.includes("NOTIFY")) {
-      btn.addEventListener("click", (e) => {
-        const card = btn.closest(".product-card");
-        const productName = card?.querySelector("h3")?.textContent;
-
-        if (productName) {
-          handleProductView(productName);
-        }
-      });
-    }
-  });
-}
-
-/**
- * Handle product view
- * @param {string} productName - Product name
- */
-function handleProductView(productName) {
-  const modelMap = {
-    "RC HIGHWAYMAN": CONFIG.MODELS.RC_HIGHWAYMAN,
-    "RC ANNIHILATOR": CONFIG.MODELS.RC_ANNIHILATOR,
-    "RC SHVAN": CONFIG.MODELS.RC_SHVAN,
-    "RC TIME MACHINE": CONFIG.MODELS.FORTNITE_BTTF,
-  };
-
-  const modelSrc = modelMap[productName];
-  if (modelSrc) {
-    changeModelSource(".hero-model model-viewer", modelSrc);
-    scrollToSection("home");
-  }
-}
-
-/**
- * Handle Notify Me button
- */
-function handleNotifyButton() {
-  const notifyBtns = document.querySelectorAll(".btn-secondary");
-  const notifyBtn = Array.from(notifyBtns).find((btn) =>
-    btn.textContent.includes("NOTIFY"),
-  );
-
-  if (notifyBtn) {
-    notifyBtn.addEventListener("click", () => {
-      alert("Thank you! We'll notify you when new models are available.");
+    btn.addEventListener("click", (e) => {
+      e.preventDefault();
+      const targetId = btn.dataset.scrollTarget;
+      if (targetId) {
+        scrollToSection(targetId);
+      }
     });
-  }
+  });
+}
+
+function handleNotifyButton() {
+  document.querySelectorAll(".btn-secondary").forEach((btn) => {
+    if (btn.textContent.includes("NOTIFY")) {
+      btn.addEventListener("click", () => {
+        alert("Thank you! We'll notify you when new models are available.");
+      });
+    }
+  });
 }
 
 
@@ -1285,32 +1321,10 @@ function initializeApp() {
   initCheckout();
   initProductPreview();
 
-  // Load cart from storage
-  loadCart();
-
-  // Setup checkout button with cart validation
-  setupCheckoutValidation();
-
   // Setup error handling
   setupErrorHandlers();
 
   console.log("✅ App initialized successfully");
-}
-
-/**
- * Setup checkout validation
- */
-function setupCheckoutValidation() {
-  const checkoutBtn = document.getElementById("checkoutBtn");
-  if (checkoutBtn) {
-    checkoutBtn.addEventListener("click", (e) => {
-      const cart = getCart();
-      if (cart.length === 0) {
-        e.preventDefault();
-        alert("Your cart is empty!");
-      }
-    });
-  }
 }
 
 /**
@@ -1343,9 +1357,3 @@ function setupErrorHandlers() {
  * DOM ready handler
  */
 document.addEventListener("DOMContentLoaded", initializeApp);
-
-// Make global functions available for inline HTML calls (onclick handlers)
-// These are needed because inline onclick attributes can't access ES6 module exports
-window.updateQuantity = updateQuantity;
-window.removeFromCart = removeFromCart;
-
